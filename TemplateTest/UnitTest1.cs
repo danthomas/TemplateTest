@@ -100,8 +100,38 @@ namespace TemplateTest
             var tokens = new Parser().Parse(@"@{one two three}");
 
             Assert.That(tokens.Count, Is.EqualTo(1));
-            Assert.That(tokens[0].Text, Is.EqualTo(@"(one two three)"));
+            Assert.That(tokens[0].Text, Is.EqualTo(@"{one two three}"));
             Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Block));
+        }
+
+        [Test]
+        public void BlocksCanContainText()
+        {
+            var tokens = new Parser().Parse(@"@{one @two@ three}");
+
+            Assert.That(tokens.Count, Is.EqualTo(3));
+            Assert.That(tokens[0].Text, Is.EqualTo(@"{one "));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Block));
+            Assert.That(tokens[1].Text, Is.EqualTo(@"two"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[2].Text, Is.EqualTo(@" three}"));
+            Assert.That(tokens[2].TokenType, Is.EqualTo(TokenType.Block));
+        }
+
+        [Test]
+        public void BlocksTextStatementText()
+        {
+            var tokens = new Parser().Parse(@"@{block}text@(statement)text");
+
+            Assert.That(tokens.Count, Is.EqualTo(4));
+            Assert.That(tokens[0].Text, Is.EqualTo(@"{block}"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Block));
+            Assert.That(tokens[1].Text, Is.EqualTo(@"text"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[2].Text, Is.EqualTo(@"(statement)"));
+            Assert.That(tokens[2].TokenType, Is.EqualTo(TokenType.Statement));
+            Assert.That(tokens[3].Text, Is.EqualTo(@"text"));
+            Assert.That(tokens[3].TokenType, Is.EqualTo(TokenType.Text));
         }
     }
 
@@ -115,7 +145,7 @@ namespace TemplateTest
             tokens.Add(token);
 
             int braces = 0;
-            int curlyBraces = 0;
+            bool inBlock = false;
 
             for (int i = 0; i < template.Length; ++i)
             {
@@ -123,7 +153,7 @@ namespace TemplateTest
                 char c = template[i];
                 char? next = i < template.Length - 1 ? template[i + 1] : (char?)null;
 
-                if (token.TokenType == TokenType.Statement)
+                if (token.TokenType == TokenType.Statement || token.TokenType == TokenType.Block)
                 {
                     bool isCode = false;
 
@@ -131,47 +161,68 @@ namespace TemplateTest
                     {
                         isCode = true;
                     }
-                    
-                    
+
+
                     if (Char.IsLetter(c) || c == '.')
                     {
                         isCode = true;
                     }
-                    else if (c == '(')
+                    else if (c == '(' || c == '{')
                     {
                         braces++;
                         isCode = true;
                     }
-                    else if (c == ')' && braces > 0)
+                    else if ((c == ')' || c == '}') && braces > 0)
                     {
                         braces--;
                         isCode = true;
+                    }
+                    else if (c == '@')
+                    {
+                        inBlock = token.TokenType == TokenType.Block;
+                        isCode = false;
                     }
 
                     if (isCode)
                     {
                         token.Text += c;
                     }
+                    else if (inBlock)
+                    {
+                        token = new Token
+                        {
+                            TokenType = TokenType.Text
+                        };
+
+                        tokens.Add(token);
+                    }
                     else
                     {
                         token = new Token
                         {
-                            TokenType = c == '@' ? TokenType.Statement : TokenType.Text, 
-                            Text = c == '@' ? "" : c.ToString()
+                            TokenType = c == '@'
+                            ? (next.HasValue && next == '{' ? TokenType.Block : TokenType.Statement)
+                            : TokenType.Text,
+                            Text = c == '@' ? null : c.ToString()
                         };
                         tokens.Add(token);
                     }
-                }
-                else if (token.TokenType == TokenType.Block)
-                {
                 }
                 else
                 {
                     if (c == '@')
                     {
-                        braces = 0;
-                        token = new Token { TokenType = TokenType.Statement };
-                        tokens.Add(token);
+                        if (inBlock)
+                        {
+                            token = new Token { TokenType = TokenType.Block };
+                            tokens.Add(token);
+                        }
+                        else
+                        {
+                            braces = 0;
+                            token = new Token { TokenType = next.HasValue && next == '{' ? TokenType.Block : TokenType.Statement };
+                            tokens.Add(token);
+                        }
                     }
                     else
                     {
