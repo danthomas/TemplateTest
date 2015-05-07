@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using NUnit.Framework;
+﻿using NUnit.Framework;
 
 namespace TemplateTest
 {
@@ -133,108 +130,54 @@ namespace TemplateTest
             Assert.That(tokens[3].Text, Is.EqualTo(@"text"));
             Assert.That(tokens[3].TokenType, Is.EqualTo(TokenType.Text));
         }
+
+        [Test]
+        public void Zzz()
+        {
+            string s = @"<# ForEach((p, f) => #><#= f ? "", "" : """" #><#); #>";
+            var tokens = new Parser().Parse(@"@{ForEach((p, f) => f ? @"", "" : @"""");}");
+
+        }
+
+        [Test]
+        public void Xxx()
+        {
+            var tokens = new Parser().Parse(@"namespace @Entity.Group.Name
+{
+    public class @Entity.Name
+    {
+        public @(Entity.Name)(@{
+ForEachProperty((p, f) => );
+})
+        {
+        }
+    }
+}");
+
+            //Assert.That(tokens.Count, Is.EqualTo(4));
+            Assert.That(tokens[0].Text, Is.EqualTo(@"namespace "));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[1].Text, Is.EqualTo(@"Entity.Group.Name"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Statement));
+            Assert.That(tokens[2].Text, Is.EqualTo(@"
+{
+    public class "));
+            Assert.That(tokens[2].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[3].Text, Is.EqualTo(@"Entity.Name"));
+            Assert.That(tokens[3].TokenType, Is.EqualTo(TokenType.Statement));
+            Assert.That(tokens[3].Text, Is.EqualTo(@"Entity.Name"));
+            Assert.That(tokens[3].TokenType, Is.EqualTo(TokenType.Statement));
+        }
     }
 
-    public class Parser
+    public enum State
     {
-        public List<Token> Parse(string template)
-        {
-            List<Token> tokens = new List<Token>();
-
-            Token token = new Token { TokenType = TokenType.Text };
-            tokens.Add(token);
-
-            int braces = 0;
-            bool inBlock = false;
-
-            for (int i = 0; i < template.Length; ++i)
-            {
-                char? prev = i > 0 ? template[i - 1] : (char?)null;
-                char c = template[i];
-                char? next = i < template.Length - 1 ? template[i + 1] : (char?)null;
-
-                if (token.TokenType == TokenType.Statement || token.TokenType == TokenType.Block)
-                {
-                    bool isCode = false;
-
-                    if (braces > 0)
-                    {
-                        isCode = true;
-                    }
-
-
-                    if (Char.IsLetter(c) || c == '.')
-                    {
-                        isCode = true;
-                    }
-                    else if (c == '(' || c == '{')
-                    {
-                        braces++;
-                        isCode = true;
-                    }
-                    else if ((c == ')' || c == '}') && braces > 0)
-                    {
-                        braces--;
-                        isCode = true;
-                    }
-                    else if (c == '@')
-                    {
-                        inBlock = token.TokenType == TokenType.Block;
-                        isCode = false;
-                    }
-
-                    if (isCode)
-                    {
-                        token.Text += c;
-                    }
-                    else if (inBlock)
-                    {
-                        token = new Token
-                        {
-                            TokenType = TokenType.Text
-                        };
-
-                        tokens.Add(token);
-                    }
-                    else
-                    {
-                        token = new Token
-                        {
-                            TokenType = c == '@'
-                            ? (next.HasValue && next == '{' ? TokenType.Block : TokenType.Statement)
-                            : TokenType.Text,
-                            Text = c == '@' ? null : c.ToString()
-                        };
-                        tokens.Add(token);
-                    }
-                }
-                else
-                {
-                    if (c == '@')
-                    {
-                        if (inBlock)
-                        {
-                            token = new Token { TokenType = TokenType.Block };
-                            tokens.Add(token);
-                        }
-                        else
-                        {
-                            braces = 0;
-                            token = new Token { TokenType = next.HasValue && next == '{' ? TokenType.Block : TokenType.Statement };
-                            tokens.Add(token);
-                        }
-                    }
-                    else
-                    {
-                        token.Text += c;
-                    }
-                }
-            }
-
-            tokens = tokens.Where(item => item.Text != null).ToList();
-
-            return tokens;
-        }
+        None,
+        Text,
+        Statement,
+        StatementBlock,
+        Block,
+        TextInBlock
     }
 
     public enum TokenType
