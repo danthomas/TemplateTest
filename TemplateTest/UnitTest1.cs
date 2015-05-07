@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 
 namespace TemplateTest
@@ -10,55 +11,97 @@ namespace TemplateTest
         [Test]
         public void AtSignAndLettersRecognisedAsStatement()
         {
-            var tokens = new Parser().Parse(@"class @Name");
+            var tokens = new Parser().Parse(@"one@two");
 
             Assert.That(tokens.Count, Is.EqualTo(2));
-            Assert.That(tokens[0].Text, Is.EqualTo("class "));
-            Assert.That(tokens[1].Text, Is.EqualTo("Name"));
+            Assert.That(tokens[0].Text, Is.EqualTo("one"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[1].Text, Is.EqualTo("two"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Statement));
         }
 
         [Test]
-        public void StatementEndedByNonLetter()
+        public void StatementEndedBySpace()
         {
-            var tokens = new Parser().Parse(@"class @Name{}");
+            var tokens = new Parser().Parse(@"one@two three");
 
             Assert.That(tokens.Count, Is.EqualTo(3));
-            Assert.That(tokens[0].Text, Is.EqualTo("class "));
-            Assert.That(tokens[1].Text, Is.EqualTo("Name"));
-            Assert.That(tokens[2].Text, Is.EqualTo("{}"));
+            Assert.That(tokens[0].Text, Is.EqualTo("one"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[1].Text, Is.EqualTo("two"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Statement));
+            Assert.That(tokens[2].Text, Is.EqualTo(" three"));
+            Assert.That(tokens[2].TokenType, Is.EqualTo(TokenType.Text));
         }
 
         [Test]
         public void StatementCanHaveDots()
         {
-            var tokens = new Parser().Parse(@"class @Entity.Name");
+            var tokens = new Parser().Parse(@"one@two.three");
 
             Assert.That(tokens.Count, Is.EqualTo(2));
-            Assert.That(tokens[0].Text, Is.EqualTo("class "));
-            Assert.That(tokens[1].Text, Is.EqualTo("Entity.Name"));
+            Assert.That(tokens[0].Text, Is.EqualTo("one"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[1].Text, Is.EqualTo("two.three"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Statement));
         }
 
         [Test]
         public void StatementCanHaveParens()
         {
-            var tokens = new Parser().Parse(@"class @Name.ToSafeString()");
+            var tokens = new Parser().Parse(@"one@two()");
 
             Assert.That(tokens.Count, Is.EqualTo(2));
-            Assert.That(tokens[0].Text, Is.EqualTo("class "));
-            Assert.That(tokens[1].Text, Is.EqualTo("Name.ToSafeString()"));
+            Assert.That(tokens[0].Text, Is.EqualTo("one"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[1].Text, Is.EqualTo("two()"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Statement));
         }
 
         [Test]
-        public void XXX()
+        public void StatementParensAreMatched()
         {
-            var tokens = new Parser().Parse(@"Delete (@Identifier.Type @Identifier.Name.ToCamelCase())");
+            var tokens = new Parser().Parse(@"one(@two())");
 
-            Assert.That(tokens.Count, Is.EqualTo(5));
-            Assert.That(tokens[0].Text, Is.EqualTo("Delete ("));
-            Assert.That(tokens[1].Text, Is.EqualTo("Identifier.Type"));
-            Assert.That(tokens[2].Text, Is.EqualTo(" "));
-            Assert.That(tokens[3].Text, Is.EqualTo("Identifier.Name.ToCamelCase()"));
-            Assert.That(tokens[4].Text, Is.EqualTo(")"));
+            Assert.That(tokens.Count, Is.EqualTo(3));
+            Assert.That(tokens[0].Text, Is.EqualTo("one("));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Text));
+            Assert.That(tokens[1].Text, Is.EqualTo("two()"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Statement));
+            Assert.That(tokens[2].Text, Is.EqualTo(")"));
+            Assert.That(tokens[2].TokenType, Is.EqualTo(TokenType.Text));
+        }
+
+        [Test]
+        public void StatementCanBeEnclosedInParens()
+        {
+            var tokens = new Parser().Parse(@"@(one two three)");
+
+            Assert.That(tokens.Count, Is.EqualTo(1));
+            Assert.That(tokens[0].Text, Is.EqualTo(@"(one two three)"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Statement));
+        }
+
+        [Test]
+        public void StatementsCanFollowEachOther()
+        {
+            var tokens = new Parser().Parse(@"@one@two");
+
+            Assert.That(tokens.Count, Is.EqualTo(2));
+            Assert.That(tokens[0].Text, Is.EqualTo(@"one"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Statement));
+            Assert.That(tokens[1].Text, Is.EqualTo(@"two"));
+            Assert.That(tokens[1].TokenType, Is.EqualTo(TokenType.Statement));
+        }
+
+        [Test]
+        public void BlocksAreEnclosedInCurlyBraces()
+        {
+            var tokens = new Parser().Parse(@"@{one two three}");
+
+            Assert.That(tokens.Count, Is.EqualTo(1));
+            Assert.That(tokens[0].Text, Is.EqualTo(@"(one two three)"));
+            Assert.That(tokens[0].TokenType, Is.EqualTo(TokenType.Block));
         }
     }
 
@@ -71,30 +114,37 @@ namespace TemplateTest
             Token token = new Token { TokenType = TokenType.Text };
             tokens.Add(token);
 
+            int braces = 0;
+            int curlyBraces = 0;
+
             for (int i = 0; i < template.Length; ++i)
             {
                 char? prev = i > 0 ? template[i - 1] : (char?)null;
                 char c = template[i];
                 char? next = i < template.Length - 1 ? template[i + 1] : (char?)null;
 
-                int parens = 0;
-
                 if (token.TokenType == TokenType.Statement)
                 {
                     bool isCode = false;
 
-                    if (Char.IsLetter(c))
+                    if (braces > 0)
+                    {
+                        isCode = true;
+                    }
+                    
+                    
+                    if (Char.IsLetter(c) || c == '.')
                     {
                         isCode = true;
                     }
                     else if (c == '(')
                     {
-                        parens++;
+                        braces++;
                         isCode = true;
                     }
-                    else if (c == ')')
+                    else if (c == ')' && braces > 0)
                     {
-                        parens--;
+                        braces--;
                         isCode = true;
                     }
 
@@ -104,7 +154,11 @@ namespace TemplateTest
                     }
                     else
                     {
-                        token = new Token { TokenType = TokenType.Text, Text = c.ToString() };
+                        token = new Token
+                        {
+                            TokenType = c == '@' ? TokenType.Statement : TokenType.Text, 
+                            Text = c == '@' ? "" : c.ToString()
+                        };
                         tokens.Add(token);
                     }
                 }
@@ -115,6 +169,7 @@ namespace TemplateTest
                 {
                     if (c == '@')
                     {
+                        braces = 0;
                         token = new Token { TokenType = TokenType.Statement };
                         tokens.Add(token);
                     }
@@ -124,6 +179,8 @@ namespace TemplateTest
                     }
                 }
             }
+
+            tokens = tokens.Where(item => item.Text != null).ToList();
 
             return tokens;
         }
